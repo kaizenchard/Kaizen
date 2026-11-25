@@ -111,6 +111,9 @@
 
             max-width: 70%;
 
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+
         }
 
         .ai {
@@ -130,6 +133,9 @@
             line-height: 1.4;
 
             animation: fade .4s ease;
+
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
 
         }
 
@@ -210,6 +216,11 @@
             background: greenyellow;
             transform: scale(1.05);
             transition: 1s ease;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: wait;
         }
 
         .typing {
@@ -386,7 +397,7 @@
 
             <input id="input" placeholder="chat with Kaizen😇...">
 
-            <button onclick="sendMessage()">
+            <button id="sendBtn" onclick="sendMessage()">
                 Send
             </button>
 
@@ -396,118 +407,101 @@
 
     <script>
 
-        const API_KEY = "AQ.Ab8RN6Joakqtc_ZbOB6kkBY2iHA8vLWnGUemR68EwIh0_pUNmg";
+        const messages = document.getElementById("messages");
+        const input = document.getElementById("input");
+        const sendBtn = document.getElementById("sendBtn");
 
-        async function getReply(msg) {
-            if (API_KEY.includes("PUT_YOUR")) return "Paste your API key for top. Get free at aistudio.google.com/app/apikey";
+        // Conversation history sent to the backend so KAIZEN remembers context.
+        // The API key is NOT here: it lives in a Netlify environment variable.
+        const history = [];
+        let busy = false;
+
+        async function getReply() {
             try {
-                let r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + API_KEY, {
+                const r = await fetch("/.netlify/functions/chat", {
                     method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({contents: [{parts: [{text: msg}]}]})
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ messages: history })
                 });
-                let d = await r.json();
-                return d.candidates[0].content.parts[0].text;
+                const d = await r.json();
+                if (!r.ok) return d.error || "Something went wrong. Try again.";
+                return d.reply;
             } catch (e) {
-                return "Check API key / internet";
+                return "Can't reach the server. Check your internet and try again.";
             }
         }
 
-        const responses = [
+        async function sendMessage() {
 
-            "That's a great question! Let me explain it in a simple way.",
+            const text = input.value.trim();
 
-            "Interesting! Here's what I think...",
+            if (text === "" || busy) return;
 
-            "I can definitely help with that.",
+            busy = true;
+            sendBtn.disabled = true;
 
-            "Here's a better approach you could try.",
-
-            "Absolutely! Let's work through it together.",
-
-            "That's a smart idea. Here's how I'd do it."
-
-        ];
-
-        function sendMessage() {
-
-            let input = document.getElementById("input");
-
-            if (input.value == "") return;
-
-            let user = document.createElement("div");
-
+            const user = document.createElement("div");
             user.className = "user";
-
-            user.innerHTML = input.value;
-
+            user.textContent = text;
             messages.appendChild(user);
 
-            let text = input.value;
-
             input.value = "";
-
-            setTimeout(() => {
-
-                let ai = document.createElement("div");
-
-                ai.className = "ai";
-
-                messages.appendChild(ai);
-
-                type(ai, generateResponse(text));
-
-                messages.scrollTop = messages.scrollHeight;
-
-            }, 700);
-
             messages.scrollTop = messages.scrollHeight;
 
+            history.push({ role: "user", content: text });
+
+            // AI bubble with blinking cursor while we wait for the reply
+            const ai = document.createElement("div");
+            ai.className = "ai";
+            ai.innerHTML = "<span class='typing'></span>";
+            messages.appendChild(ai);
+            messages.scrollTop = messages.scrollHeight;
+
+            const reply = await getReply();
+
+            history.push({ role: "assistant", content: reply });
+
+            type(ai, reply, () => {
+                busy = false;
+                sendBtn.disabled = false;
+                input.focus();
+            });
+
         }
 
-        function generateResponse(message) {
-
-            message = message.toLowerCase();
-
-            if (message.includes("hello") || message.includes("hi") || message.includes("hey") || message.includes("kai") || message.includes("heyya"))
-                return "Hey Kaizen! is there anything you want to task me with?";
-
-            if (message.includes("your name") || message.includes("name"))
-                return "I'm KAIZEN , your intelligent AI assistant.";
-
-            if (message.includes("time"))
-                return "You can use JavaScript's Date() object to display the current time.";
-
-            if (message.includes("code"))
-                return "I'd love to help you write code! Tell me the language and what you're building.";
-
-            return responses[Math.floor(Math.random() * responses.length)];
-
-        }
-
-        function type(element, text) {
+        function type(element, text, done) {
 
             let i = 0;
 
-            let interval = setInterval(() => {
+            const interval = setInterval(() => {
 
-                element.innerHTML = text.substring(0, i) + "<span class='typing'></span>";
+                element.textContent = text.substring(0, i);
+
+                const cursor = document.createElement("span");
+                cursor.className = "typing";
+                element.appendChild(cursor);
 
                 i++;
+
+                messages.scrollTop = messages.scrollHeight;
 
                 if (i > text.length) {
 
                     clearInterval(interval);
 
-                    element.innerHTML = text;
+                    element.textContent = text;
+
+                    messages.scrollTop = messages.scrollHeight;
+
+                    if (done) done();
 
                 }
 
-            }, 25);
+            }, 15);
 
         }
 
-        document.getElementById("input").addEventListener("keypress", function (e) {
+        input.addEventListener("keypress", function (e) {
 
             if (e.key === "Enter") sendMessage();
 
@@ -519,13 +513,13 @@
 
         upBtn.addEventListener("click", () => {
 
-            messages.scrollBy({top: -scrollStep, behavior: "smooth"});
+            messages.scrollBy({ top: -scrollStep, behavior: "smooth" });
 
         });
 
         downBtn.addEventListener("click", () => {
 
-            messages.scrollBy({top: scrollStep, behavior: "smooth"});
+            messages.scrollBy({ top: scrollStep, behavior: "smooth" });
 
         });
 
