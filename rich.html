@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KAIZEN AI</title>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: comic sans ms;
+        }
+
+        body {
+
+            height: 100vh;
+
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            background: linear-gradient(-90deg, indigo, gold, purple);
+            background-size: 400% 400%;
+            animation: bg 10s ease infinite;
+
+            overflow: hidden;
+
+        }
+
+        @keyframes bg {
+
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
+
+        }
+
+        .chat {
+
+            width: 90%;
+            max-width: 900px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+
+            backdrop-filter: blur(18px);
+
+            position: relative;
+
+        }
+
+        .header {
+
+            padding: 5px;
+            font-size: 28px;
+            font-weight: bold;
+            color: red;
+
+            text-align: center;
+
+        }
+
+        .messages {
+
+            flex: 1;
+            overflow: auto;
+
+            padding: 20px;
+
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+
+            scrollbar-width: none;
+
+        }
+
+        .messages::-webkit-scrollbar {
+
+            width: 0;
+            height: 0;
+
+        }
+
+        .user {
+
+            align-self: flex-end;
+
+            background: #ffffff16;
+
+            padding: 15px 20px;
+
+            font-size: 12;
+
+            font: bold;
+
+            border-radius: 20px;
+
+            color: black;
+
+            max-width: 70%;
+
+        }
+
+        .ai {
+
+            align-self: flex-start;
+
+            background: #ffffff18;
+
+            padding: 15px 20px;
+
+            border-radius: 20px;
+
+            color: black;
+
+            max-width: 70%;
+
+            line-height: 1.4;
+
+            animation: fade .4s ease;
+
+        }
+
+        @keyframes fade {
+
+            from {
+
+                opacity: 0;
+                transform: translateY(20px);
+
+            }
+
+            to {
+
+                opacity: 1;
+                transform: translateY(0);
+
+            }
+
+        }
+
+        .inputArea {
+
+            display: flex;
+            padding: 20px;
+            gap: 10px;
+
+        }
+
+        input {
+
+            flex: 1;
+
+            padding: 18px;
+            width: 10px;
+            border: none;
+
+            outline: none;
+
+            border-radius: 50px;
+
+            font-size: 16px;
+
+            background: transparent;
+
+        }
+
+        input:hover {
+            background: white;
+
+            transform: scale(0.93);
+            transition: 2s ease;
+        }
+
+
+
+        button {
+
+            padding: 18px 30px;
+
+            border: none;
+
+            border-radius: 50px;
+
+            cursor: pointer;
+
+            background: #0ffff5;
+
+            font-size: 16px;
+
+            font-weight: bold;
+
+            transition: .3s;
+
+        }
+
+        button:hover {
+            background: greenyellow;
+            transform: scale(1.05);
+            transition: 1s ease;
+        }
+
+        .typing {
+
+            display: inline-block;
+            border-right: 2px solid white;
+            animation: blink .6s infinite;
+
+        }
+
+        @keyframes blink {
+
+            50% {
+                border-color: transparent;
+            }
+
+        }
+
+        /* ---- Floating scroll control ---- */
+        .scroll-control {
+
+            position: absolute;
+            right: 8px;
+            top: 76%;
+            transform: translateY(-50%);
+
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1px;
+
+            padding: 1px;
+
+            border-radius: 99px;
+
+            background: transparent;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+
+            border: 1px solid rgba(255, 255, 255, 0.12);
+
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+
+            opacity: 0.45;
+
+            transition: opacity .25s ease, transform .25s ease;
+
+            z-index: 999;
+
+        }
+
+        .scroll-control:hover {
+
+            opacity: 1;
+
+        }
+
+        .scroll-btn {
+
+            width: 12px;
+            height: 12px;
+
+            border: none;
+
+            border-radius: 50%;
+
+            background: transparent;
+
+            color: white;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            cursor: pointer;
+
+            transition: transform .15s ease;
+
+            -webkit-tap-highlight-color: transparent;
+
+            outline: none;
+
+        }
+
+        .scroll-btn:hover {
+
+            background: transparent;
+
+        }
+
+        .scroll-btn:active {
+
+            transform: scale(0.9);
+
+        }
+
+        .scroll-btn:focus {
+
+            outline: none;
+
+        }
+
+        .scroll-btn svg {
+
+            width: 11px;
+            height: 11px;
+
+            stroke: white;
+            stroke-width: 3;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+
+        }
+
+        .scroll-divider {
+
+            width: 19px;
+            height: 3px;
+
+            background: rgba(255, 255, 255, 0.15);
+
+        }
+
+        .scroll-btn[disabled] {
+
+            opacity: 0.25;
+            cursor: default;
+
+        }
+
+        .scroll-btn[disabled]:hover {
+
+            background: transparent;
+
+        }
+    </style>
+
+</head>
+
+<body>
+
+
+    <div class="chat">
+
+        <div class="header">
+            ௹KAIZEN
+        </div>
+
+        <div class="messages" id="messages">
+
+            <div class="ai">
+                Hello 👋 I'm KAIZEN .<br><br>
+                Ask me anything!
+            </div>
+
+        </div>
+
+        <div class="scroll-control">
+            <button class="scroll-btn" id="scrollUp" aria-label="Scroll up">
+                <svg viewBox="0 0 24 24">
+                    <path d="M18 15l-6-6-6 6" />
+                </svg>
+            </button>
+            <div class="scroll-divider"></div>
+            <button class="scroll-btn" id="scrollDown" aria-label="Scroll down">
+                <svg viewBox="0 0 24 24">
+                    <path d="M6 9l6 6 6-6" />
+                </svg>
+            </button>
+        </div>
+
+        <div class="inputArea">
+
+            <input id="input" placeholder="chat with Kaizen😇...">
+
+            <button onclick="sendMessage()">
+                Send
+            </button>
+
+        </div>
+
+    </div>
+
+    <script>
+
+        const API_KEY = "AQ.Ab8RN6Joakqtc_ZbOB6kkBY2iHA8vLWnGUemR68EwIh0_pUNmg";
+
+        async function getReply(msg) {
+            if (API_KEY.includes("PUT_YOUR")) return "Paste your API key for top. Get free at aistudio.google.com/app/apikey";
+            try {
+                let r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + API_KEY, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({contents: [{parts: [{text: msg}]}]})
+                });
+                let d = await r.json();
+                return d.candidates[0].content.parts[0].text;
+            } catch (e) {
+                return "Check API key / internet";
+            }
+        }
+
+        const responses = [
+
+            "That's a great question! Let me explain it in a simple way.",
+
+            "Interesting! Here's what I think...",
+
+            "I can definitely help with that.",
+
+            "Here's a better approach you could try.",
+
+            "Absolutely! Let's work through it together.",
+
+            "That's a smart idea. Here's how I'd do it."
+
+        ];
+
+        function sendMessage() {
+
+            let input = document.getElementById("input");
+
+            if (input.value == "") return;
+
+            let user = document.createElement("div");
+
+            user.className = "user";
+
+            user.innerHTML = input.value;
+
+            messages.appendChild(user);
+
+            let text = input.value;
+
+            input.value = "";
+
+            setTimeout(() => {
+
+                let ai = document.createElement("div");
+
+                ai.className = "ai";
+
+                messages.appendChild(ai);
+
+                type(ai, generateResponse(text));
+
+                messages.scrollTop = messages.scrollHeight;
+
+            }, 700);
+
+            messages.scrollTop = messages.scrollHeight;
+
+        }
+
+        function generateResponse(message) {
+
+            message = message.toLowerCase();
+
+            if (message.includes("hello") || message.includes("hi") || message.includes("hey") || message.includes("kai") || message.includes("heyya"))
+                return "Hey Kaizen! is there anything you want to task me with?";
+
+            if (message.includes("your name") || message.includes("name"))
+                return "I'm KAIZEN , your intelligent AI assistant.";
+
+            if (message.includes("time"))
+                return "You can use JavaScript's Date() object to display the current time.";
+
+            if (message.includes("code"))
+                return "I'd love to help you write code! Tell me the language and what you're building.";
+
+            return responses[Math.floor(Math.random() * responses.length)];
+
+        }
+
+        function type(element, text) {
+
+            let i = 0;
+
+            let interval = setInterval(() => {
+
+                element.innerHTML = text.substring(0, i) + "<span class='typing'></span>";
+
+                i++;
+
+                if (i > text.length) {
+
+                    clearInterval(interval);
+
+                    element.innerHTML = text;
+
+                }
+
+            }, 25);
+
+        }
+
+        document.getElementById("input").addEventListener("keypress", function (e) {
+
+            if (e.key === "Enter") sendMessage();
+
+        });
+
+        const upBtn = document.getElementById("scrollUp");
+        const downBtn = document.getElementById("scrollDown");
+        const scrollStep = 200;
+
+        upBtn.addEventListener("click", () => {
+
+            messages.scrollBy({top: -scrollStep, behavior: "smooth"});
+
+        });
+
+        downBtn.addEventListener("click", () => {
+
+            messages.scrollBy({top: scrollStep, behavior: "smooth"});
+
+        });
+
+        function updateScrollButtons() {
+
+            const atTop = messages.scrollTop <= 0;
+
+            const atBottom = messages.scrollTop + messages.clientHeight >= messages.scrollHeight - 1;
+
+            upBtn.disabled = atTop;
+
+            downBtn.disabled = atBottom;
+
+        }
+
+        messages.addEventListener("scroll", updateScrollButtons);
+
+        updateScrollButtons();
+
+    </script>
+
+</body>
+
+</html>
