@@ -75,7 +75,10 @@ exports.handler = async (event) => {
       if (res.status === 429) {
         return json(429, { error: "Too many requests right now. Try again in a minute." });
       }
-      return json(502, { error: "The AI service returned an error" });
+      const detail = data?.error?.message || "unknown error";
+      return json(502, {
+        error: `The AI service returned an error (${res.status}, model ${model}): ${detail}`,
+      });
     }
 
     const parts = data?.candidates?.[0]?.content?.parts || [];
