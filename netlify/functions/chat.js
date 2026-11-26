@@ -1,103 +1,22 @@
-// Netlify Function: receives chat messages from the page, calls the Gemini API,
-// and returns the reply. The API key lives in a Netlify environment variable,
-// so it is never exposed in the browser.
+I'll check which Gemini model names are current, so the fallback is a real one.
 
-exports.handler = async (event) => {
-  if (event.httpMethod !== "POST") {
-    return json(405, { error: "Method not allowed" });
-  }
+I couldn't confirm exact version names for every model. So the fallbacks use Google's "latest" aliases, which don't go out of date when versions change.
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return json(500, { error: "Server is missing GEMINI_API_KEY" });
-  }
+The change shown is the retry edit I just made, so nothing unexpected there. I'll cut the time limits so the function can't run past Netlify's shortest timeout, then re-test.
 
-  // You can change the model in Netlify (env var GEMINI_MODEL) without editing code.
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+I've sent you the new `chat.js`. I tested it with fake Gemini responses. When the main model returned "busy" twice, it moved on to the fallback and answered. I haven't run it against the real Gemini yet.
 
-  let messages;
-  try {
-    ({ messages } = JSON.parse(event.body || "{}"));
-  } catch {
-    return json(400, { error: "Invalid JSON" });
-  }
+It now does this:
+- If `gemini-3.8-flash` is busy, it retries once, then tries the fallbacks `gemini-flash-latest` and `gemini-flash-lite-latest`.
+- If all of them are busy, it shows "KAIZEN is very busy right now. Please try again in a moment."
+- A wrong-key error shows the real reason, so mistakes like that are easy to spot.
 
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return json(400, { error: "No messages provided" });
-  }
+To put it on GitHub:
+1. Open **github.com/kaizenchard/Kaizen/edit/main/netlify/functions/chat.js**
+2. Press **Ctrl+A** in the text, then **Delete**.
+3. Open the new `chat.js` I sent you, copy all of it, and paste it in.
+4. Click **Commit changes**, then confirm.
 
-  // Keep only the last 20 turns, valid roles, and cap message length.
-  // Gemini calls the AI's role "model" instead of "assistant".
-  const contents = messages
-    .filter(
-      (m) =>
-        m &&
-        (m.role === "user" || m.role === "assistant") &&
-        typeof m.content === "string" &&
-        m.content.trim() !== ""
-    )
-    .slice(-20)
-    .map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content.slice(0, 4000) }],
-    }));
+Wait about a minute, refresh your site with **Ctrl+Shift+R**, and send "hi". If a fallback model name is wrong, the chat will still work as long as one model in the list is available.
 
-  if (contents.length === 0 || contents[0].role !== "user") {
-    return json(400, { error: "Conversation must start with a user message" });
-  }
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [
-              {
-                text: "You are KAIZEN, a friendly, concise AI assistant inside a chat web page. Keep answers clear and plain text (no markdown).",
-              },
-            ],
-          },
-          contents,
-        }),
-      }
-    );
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      console.error("Gemini API error:", JSON.stringify(data));
-      if (res.status === 429) {
-        return json(429, { error: "Too many requests right now. Try again in a minute." });
-      }
-      const detail = data?.error?.message || "unknown error";
-      return json(502, {
-        error: `The AI service returned an error (${res.status}, model ${model}): ${detail}`,
-      });
-    }
-
-    const parts = data?.candidates?.[0]?.content?.parts || [];
-    const reply = parts
-      .map((p) => p.text || "")
-      .join("")
-      .trim();
-
-    return json(200, { reply: reply || "(no reply)" });
-  } catch (err) {
-    console.error(err);
-    return json(500, { error: "Something went wrong" });
-  }
-};
-
-function json(statusCode, body) {
-  return {
-    statusCode,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  };
-}
+Once you get a real reply, click **Make public** on your Netlify site so other people can use it.
