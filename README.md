@@ -1,1 +1,1 @@
-KAIZEN AI
+KAIZEN ai
