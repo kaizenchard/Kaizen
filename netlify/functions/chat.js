@@ -12,8 +12,9 @@ exports.handler = async (event) => {
     return json(500, { error: "Server is missing GEMINI_API_KEY" });
   }
 
-  // You can change the model in Netlify (env var GEMINI_MODEL) without editing code.
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+  // Main model. Change it in Netlify with the GEMINI_MODEL variable (or delete
+  // that variable to use the default below).
+  const mainModel = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
   let messages;
   try {
@@ -46,12 +47,12 @@ exports.handler = async (event) => {
     return json(400, { error: "Conversation must start with a user message" });
   }
 
-  // Models to try, in order. The first is your main model; the others are
-  // fallbacks (Google's "latest" aliases) used when the main one is busy or gone.
+  // Models to use, in order. If one is slow, failing or busy, the next one is
+  // started alongside it and whichever answers first wins.
   const models = [
-    model,
-    "gemini-flash-latest",
+    mainModel,
     "gemini-flash-lite-latest",
+    "gemini-flash-latest",
   ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
   const body = JSON.stringify({
@@ -65,88 +66,95 @@ exports.handler = async (event) => {
     contents,
   });
 
-  const deadline = Date.now() + 8000; // stop starting new attempts after ~8 seconds
-  let lastStatus = 0;
-  let lastDetail = "";
-  let lastModel = model;
-
-  try {
-    for (let mi = 0; mi < models.length; mi++) {
-      const m = models[mi];
-      // Retry the main model twice (busy spikes), fallbacks once.
-      const attempts = mi === 0 ? 2 : 1;
-
-      for (let a = 0; a < attempts; a++) {
-        if (Date.now() > deadline) break;
-        lastModel = m;
-
-        let res, data;
-        try {
-          res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`,
-            {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                "x-goog-api-key": apiKey,
-              },
-              body,
-              signal: AbortSignal.timeout(8000),
-            }
-          );
-          data = await res.json();
-        } catch (e) {
-          lastStatus = 0;
-          lastDetail = "request timed out or failed";
-          console.error("Gemini request failed:", m, String(e));
-          continue; // try again / next model
+  async function callModel(m) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body,
+          signal: AbortSignal.timeout(8500),
         }
-
-        if (res.ok) {
-          const parts = data?.candidates?.[0]?.content?.parts || [];
-          const reply = parts.map((p) => p.text || "").join("").trim();
-          if (reply) return json(200, { reply });
-          lastStatus = 200;
-          lastDetail = "empty reply (the answer may have been blocked)";
-          break; // move to next model
-        }
-
-        lastStatus = res.status;
-        lastDetail = data?.error?.message || "unknown error";
-        console.error("Gemini API error:", m, res.status, JSON.stringify(data));
-
-        // Wrong key / bad request: other models won't help, stop now.
-        if (res.status === 400 || res.status === 401 || res.status === 403) {
-          return json(502, {
-            error: `The AI service rejected the request (${res.status}): ${lastDetail}`,
-          });
-        }
-
-        // Model gone: skip straight to the next model.
-        if (res.status === 404) break;
-
-        // Busy / rate limited / server error: brief pause, then retry.
-        if (a < attempts - 1) await sleep(800);
+      );
+      const data = await res.json();
+      if (res.ok) {
+        const parts = data?.candidates?.[0]?.content?.parts || [];
+        const reply = parts.map((p) => p.text || "").join("").trim();
+        if (reply) return { ok: true, reply };
+        return { ok: false, status: 200, model: m, detail: "empty reply (the answer may have been blocked)" };
       }
+      console.error("Gemini API error:", m, res.status, JSON.stringify(data));
+      return {
+        ok: false,
+        status: res.status,
+        model: m,
+        detail: data?.error?.message || "unknown error",
+        // Wrong key / bad request: other models won't help.
+        fatal: res.status === 400 || res.status === 401 || res.status === 403,
+      };
+    } catch (e) {
+      console.error("Gemini request failed:", m, String(e));
+      return { ok: false, status: 0, model: m, detail: `request failed or timed out (${e.name || "error"})` };
     }
-
-    if (lastStatus === 429 || lastStatus === 503 || lastStatus === 500) {
-      return json(503, {
-        error: "KAIZEN is very busy right now. Please try again in a moment.",
-      });
-    }
-    return json(502, {
-      error: `The AI service returned an error (${lastStatus}, model ${lastModel}): ${lastDetail}`,
-    });
-  } catch (err) {
-    console.error(err);
-    return json(500, { error: "Something went wrong" });
   }
-};
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+  // Start the first model now; start the next one after 3 seconds (or at once
+  // if the previous one fails). First good answer wins.
+  const result = await new Promise((resolve) => {
+    let next = 0;
+    let pending = 0;
+    let done = false;
+    let last = null;
+    const timers = [];
+
+    const finish = (r) => {
+      if (done) return;
+      done = true;
+      timers.forEach(clearTimeout);
+      resolve(r);
+    };
+
+    const launch = () => {
+      if (done || next >= models.length) return;
+      const m = models[next++];
+      pending++;
+      callModel(m).then((r) => {
+        pending--;
+        if (r.ok) return finish(r);
+        last = r;
+        if (r.fatal) return finish(r);
+        if (next < models.length) launch();
+        else if (pending === 0) finish(last);
+      });
+      if (next < models.length) timers.push(setTimeout(launch, 3000));
+    };
+
+    launch();
+    // Stop before Netlify's own time limit cuts the function off.
+    timers.push(
+      setTimeout(
+        () => finish(last || { ok: false, status: 0, model: mainModel, detail: "timed out" }),
+        9000
+      )
+    );
+  });
+
+  if (result.ok) {
+    return json(200, { reply: result.reply });
+  }
+
+  if (result.status === 429 || result.status === 500 || result.status === 503) {
+    return json(503, { error: "KAIZEN is very busy right now. Please try again in a moment." });
+  }
+
+  return json(502, {
+    error: `The AI service returned an error (${result.status}, model ${result.model}): ${result.detail}`,
+  });
+};
 
 function json(statusCode, body) {
   return {
